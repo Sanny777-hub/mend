@@ -255,15 +255,6 @@ function parseSectionHeader(lines: string[], at: number): SectionHeader {
 /** One unified diff section (SPEC.md section 6): its header and its hunks in order. */
 type Section = { header: SectionHeader; hunks: Hunk[] };
 
-/**
- * SPEC.md section 6: a unified diff patch split into its sections. A section starts at a
- * `diff --git <X> <Y>` line with two paths, or at a `--- ` line followed by a `+++ ` line. Lines
- * before the first start are ignored, except a line starting with `@@`, a hunk before any section,
- * which is `error: parse <its 1-based line>`. From each start on, parseSectionHeader reads the
- * header and parseHunk reads each hunk in it, until the next section start or the end of the patch;
- * any other line between hunks is ignored. Returns the sections in order, each with its header and
- * its hunks.
- */
 function parseSections(lines: string[]): Section[] {
   const start = (i: number): boolean => {
     const l = lines[i]!;
@@ -295,21 +286,6 @@ function parseSections(lines: string[]): Section[] {
   return sections;
 }
 
-/**
- * SPEC.md section 6: one hunk applied to a file's text, or null when the hunk cannot be
- * applied because its old lines occur at no tier of section 5. The file's lines are its text
- * split at its own line break, and its final break stays unless the hunk says otherwise. O is
- * the hunk's context and `-` lines, N its context and `+` lines, in body order; `d` is the
- * sum over the section's hunks applied so far of (N's length minus O's length). When O is
- * not empty, of its occurrences at the first tier where it occurs, the one whose 0-based
- * start is nearest to oldStart - 1 + d (of two equally near, the earlier, as
- * nearestOccurrence picks it) is replaced by N — a context line written as the file's own
- * matched line, with the tier 2 re-indentation of newLines. When O is empty, N is inserted
- * after the first oldStart + d lines (all of them when the file has fewer). When the matched
- * lines run to the end of the file (or the insertion is at the end), the result ends with a
- * line break unless a `\` line follows the hunk's last context or `+` line. The result keeps
- * the file's own line break style.
- */
 function applyHunk(hunk: Hunk, text: string, d: number, strict: boolean): string | null {
   const nl = text.indexOf('\n');
   const br = nl > 0 && text[nl - 1] === '\r' ? '\r\n' : '\n';
@@ -383,19 +359,6 @@ function applySection(section: Section, text: string, strict: boolean): string |
   return result;
 }
 
-/**
- * SPEC.md section 6: the sections of a unified diff as the edits the tool applies, one per
- * section, in section order. Each edit checks its paths for safety first (section 3), then
- * applies its section with applySection: a creation (no old path) fails `exists` when the
- * new path is already there, else sets it to the section applied to empty text; a deletion
- * (no new path) fails `missing` when the old path is not there, else removes it, and the
- * section applied to its text must leave empty text; a move (old and new path differ) fails
- * `missing` when the old path is not there and `exists` when the new path is, else removes
- * the old path and sets the new one to the section applied to the old text; otherwise a
- * change fails `missing` when the path is not there, else sets it to the section applied
- * to its text. When applySection returns null the edit fails `no-match` with the
- * section's path. A failed edit throws before it touches the tree, so it changes nothing.
- */
 function sectionEdits(sections: Section[], strict: boolean): Edit[] {
   return sections.map((section) => {
     const oldPath = section.header.oldPath;
@@ -439,17 +402,6 @@ function sectionEdits(sections: Section[], strict: boolean): Edit[] {
 /** One SEARCH/REPLACE block (SPEC.md section 7): the path and the old and new lines of one edit. */
 type Block = { path: string; oldLines: string[]; newLines: string[] };
 
-/**
- * SPEC.md section 7: a SEARCH/REPLACE patch split into its blocks, in patch order. A block starts at a line
- * that with its trailing whitespace removed equals `<<<<<<< SEARCH` and ends at one equal to `>>>>>>> REPLACE`;
- * between them a line equal to `=======` splits the old lines above it from the new lines below it. The path is
- * the nearest line before the SEARCH line, and after the previous block's REPLACE line (or the start of the
- * patch), that is not blank and, with its surrounding whitespace removed, does not start with three backticks,
- * itself trimmed; with no such line the block takes the previous block's path, and the first block with none is
- * `error: parse <its SEARCH line>`. A REPLACE line with no SEARCH before it is `error: parse <its line>`, and a
- * SEARCH line with no `=======` and then `>>>>>>> REPLACE` after it is `error: parse <the SEARCH line>`. Lines
- * outside blocks are ignored. Returns the blocks in patch order, each with its path and old and new lines.
- */
 function parseBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let after = 0; // the line after the previous block's REPLACE line
@@ -548,15 +500,6 @@ type Chunk = { anchor: string[]; body: string[]; endOfFile: boolean };
 /** One V4A file section (SPEC.md section 8): the path, whether it is an add, a delete or an update, an optional move-to path, the new content lines of an add, and the chunks of an update. */
 type FileOp = { path: string; kind: 'add' | 'delete' | 'update'; moveTo: string | null; addLines: string[]; chunks: Chunk[] };
 
-/**
- * SPEC.md section 8: one chunk of a V4A update section starting at patch line `at` (0-based). When the
- * line starts with `@@` the text after it, its surrounding spaces removed, is the chunk's anchor line and
- * the body starts at the next line; otherwise the anchor is empty and the body starts at `at`. The body
- * is the lines from there until the next `@@` line, the next `*** Add File: `/`*** Delete File: `/
- * `*** Update File: ` line, the `*** End Patch` line, or the end of the patch; a body line `*** End of
- * File` anchors the chunk to the end of the file and ends the chunk. Returns the chunk and `next`, the
- * index of the line where the next chunk or section starts.
- */
 function parseChunk(lines: string[], at: number): { chunk: Chunk; next: number } {
   const anchored = lines[at]!.startsWith('@@');
   const anchor = anchored ? [lines[at]!.slice(2).trim()] : [];
